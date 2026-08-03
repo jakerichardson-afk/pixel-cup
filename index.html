@@ -474,7 +474,8 @@
     return {
       ch, isCpu,
       x:startX, y:H/2, w:8, h:12,
-      vx:0, vy:0, speed: isCpu? 0.95 : 1.15,
+      vx:0, vy:0, speed: isCpu? 0.72 : 1.15,
+      captureR: isCpu? 6.5 : 9,
       facing: isCpu? -1: 1,
       walkPhase:0, kicking:0,
       recaptureCooldown:0,
@@ -578,17 +579,17 @@
       const goalX = W, goalY = H/2 + (Math.random()*20-10);
       let dx = goalX-ball.x, dy = goalY-ball.y;
       const d = Math.hypot(dx,dy)||1;
-      ball.vx = dx/d*3.6; ball.vy = dy/d*3.6;
-      ball.owner=null; player.recaptureCooldown=14;
+      ball.vx = dx/d*3.9; ball.vy = dy/d*3.9;
+      ball.owner=null; player.recaptureCooldown=8;
       sfxKick();
     } else {
       // poke/lunge kick if ball is near
       const dist = Math.hypot(ball.x-(player.x), ball.y-(player.y));
-      if(dist < 14 && !ball.owner){
+      if(dist < 15 && !ball.owner){
         player.kicking = 8;
         let dx = ball.x-player.x, dy = ball.y-player.y;
         const d = Math.hypot(dx,dy)||1;
-        ball.vx += dx/d*2.4; ball.vy += dy/d*2.4;
+        ball.vx += dx/d*2.8; ball.vy += dy/d*2.8;
         sfxKick();
       }
     }
@@ -631,27 +632,26 @@
       if(st.think<=0){
         st.think = 30+Math.random()*20;
       }
-      if(p.x < 90 || Math.random()<0.01){
+      if(p.x < 90 || Math.random()<0.008){
         p.kicking = 8;
-        const gy = H/2 + (Math.random()*24-12);
+        const gy = H/2 + (Math.random()*36-18);
         let dx = goalX-ball.x, dy=gy-ball.y;
         const d=Math.hypot(dx,dy)||1;
-        ball.vx = dx/d*3.3; ball.vy = dy/d*3.3;
-        ball.owner=null; p.recaptureCooldown=14;
+        ball.vx = dx/d*2.6; ball.vy = dy/d*2.6;
+        ball.owner=null; p.recaptureCooldown=18;
         sfxKick();
       }
     } else if(ball.owner===player){
-      // defensive positioning: get between ball and own goal, biased toward ball
-      targetX = (ball.x*0.5 + ownGoalX*0.35 + 40);
-      targetY = ball.y;
+      // laggy, shallow defense — only steps up when the ball is deep in CPU territory
+      targetX = ball.x > 190 ? (ball.x*0.4 + ownGoalX*0.45 + 20) : 262;
+      targetY = p.y + (ball.y - p.y)*0.35;
     } else {
-      // loose ball
+      // loose ball — CPU mostly holds its ground unless the ball is on its side
       const distToBall = Math.hypot(ball.x-p.x, ball.y-p.y);
-      const distPlayerToBall = Math.hypot(ball.x-player.x, ball.y-player.y);
-      if(ball.x > W*0.35 || distToBall < distPlayerToBall+30){
+      if(ball.x > W*0.55 || distToBall < 26){
         targetX = ball.x; targetY = ball.y;
       } else {
-        targetX = 230; targetY = H/2;
+        targetX = 250; targetY = H/2;
       }
     }
 
@@ -695,7 +695,7 @@
     [player, cpu].forEach(p=>{
       const dx = ball.x-p.x, dy = ball.y-(p.y-3);
       const dist = Math.hypot(dx,dy);
-      const captureR = 7.5;
+      const captureR = p.captureR;
       const speed = Math.hypot(ball.vx,ball.vy);
       if(dist < captureR){
         if(speed < 1.6 && p.recaptureCooldown<=0){
