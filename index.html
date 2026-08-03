@@ -92,11 +92,63 @@
     z-index:5;
   }
 
+  /* ---- Difficulty select ---- */
+  #difficultyScreen{
+    padding:22px 16px 26px;
+    text-align:center;
+  }
+  #difficultyScreen.hidden{ display:none; }
+  .diffRow{
+    display:flex;
+    gap:12px;
+    justify-content:center;
+    flex-wrap:wrap;
+    max-width:640px;
+    margin:0 auto;
+  }
+  .diffCard{
+    font-family:inherit;
+    background:#0d0716;
+    border:2px solid var(--panel-border);
+    border-radius:8px;
+    padding:16px 20px;
+    cursor:pointer;
+    color:var(--text);
+    min-width:130px;
+    transition:transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+  }
+  .diffCard:hover, .diffCard:focus-visible{ transform:translateY(-4px); outline:none; }
+  .diffCard[data-diff="easy"]:hover{ border-color:#38e1c6; box-shadow:0 6px 18px -6px #38e1c655; }
+  .diffCard[data-diff="medium"]:hover{ border-color:#ffcb47; box-shadow:0 6px 18px -6px #ffcb4755; }
+  .diffCard[data-diff="hard"]:hover{ border-color:#ff5d73; box-shadow:0 6px 18px -6px #ff5d7355; }
+  .diffLabel{ font-size:16px; font-weight:900; letter-spacing:2px; margin-bottom:6px; }
+  .diffCard[data-diff="easy"] .diffLabel{ color:#38e1c6; }
+  .diffCard[data-diff="medium"] .diffLabel{ color:#ffcb47; }
+  .diffCard[data-diff="hard"] .diffLabel{ color:#ff5d73; }
+  .diffDesc{ font-size:9.5px; color:var(--muted); letter-spacing:.5px; }
+  .diffIndicator{ font-size:10.5px; letter-spacing:1px; color:var(--muted); margin-bottom:14px; }
+  .diffIndicator span{ color:var(--accent); font-weight:700; }
+  .linkBtn{
+    font-family:inherit;
+    background:none;
+    border:none;
+    color:var(--accent2);
+    text-decoration:underline;
+    font-size:10.5px;
+    letter-spacing:1px;
+    cursor:pointer;
+    padding:0 0 0 6px;
+  }
+  @media (max-width:400px){
+    .diffCard{ min-width:104px; padding:12px 14px; }
+  }
+
   /* ---- Character select ---- */
   #selectScreen{
     padding:22px 16px 26px;
     text-align:center;
   }
+  #selectScreen.hidden{ display:none; }
   .prompt{
     font-size:12px;
     letter-spacing:2px;
@@ -325,8 +377,27 @@
     <div class="scanlines"></div>
     <div class="vignette"></div>
 
-    <div id="selectScreen">
+    <div id="difficultyScreen">
+      <div class="prompt">CHOOSE DIFFICULTY</div>
+      <div class="diffRow">
+        <button class="diffCard" data-diff="easy">
+          <div class="diffLabel">EASY</div>
+          <div class="diffDesc">Slower CPU<br>Soft, wide shots</div>
+        </button>
+        <button class="diffCard" data-diff="medium">
+          <div class="diffLabel">MEDIUM</div>
+          <div class="diffDesc">Balanced match<br>Fair fight</div>
+        </button>
+        <button class="diffCard" data-diff="hard">
+          <div class="diffLabel">HARD</div>
+          <div class="diffDesc">Fast &amp; sharp<br>Presses hard, tackles often</div>
+        </button>
+      </div>
+    </div>
+
+    <div id="selectScreen" class="hidden">
       <div class="prompt">CHOOSE YOUR PLAYER</div>
+      <div class="diffIndicator">DIFFICULTY: <span id="diffLabel">MEDIUM</span> <button class="linkBtn" id="changeDiffBtn">CHANGE</button></div>
       <div class="roster" id="roster"></div>
     </div>
 
@@ -380,6 +451,35 @@
   const MAX_CHARGE = 42, MIN_KICK_POWER = 2.0, MAX_KICK_POWER = 4.8;
   const SLIDE_DURATION = 12, SLIDE_COOLDOWN = 40, SLIDE_SPEED_MULT = 2.0, SLIDE_RANGE = 10;
   const TRAP_WINDOW = 14, TRAP_COOLDOWN = 16;
+
+  const DIFFICULTIES = {
+    easy: {
+      cpuSpeed:0.85, cpuCaptureR:5.5,
+      shotChance:0.005, shotSpread:26, shotPower:2.0, shotRecapture:22,
+      pressX:220, holdX:275, defenseLag:0.22,
+      tackleRange:20, tackleChance:0.015,
+      trapRange:30, trapChance:0.02,
+      chaseFrac:0.65, chaseRadius:18
+    },
+    medium: {
+      cpuSpeed:1.15, cpuCaptureR:6.5,
+      shotChance:0.008, shotSpread:18, shotPower:2.6, shotRecapture:18,
+      pressX:190, holdX:262, defenseLag:0.35,
+      tackleRange:26, tackleChance:0.035,
+      trapRange:40, trapChance:0.05,
+      chaseFrac:0.55, chaseRadius:26
+    },
+    hard: {
+      cpuSpeed:1.3, cpuCaptureR:8,
+      shotChance:0.014, shotSpread:12, shotPower:3.4, shotRecapture:12,
+      pressX:150, holdX:240, defenseLag:0.6,
+      tackleRange:32, tackleChance:0.07,
+      trapRange:50, trapChance:0.11,
+      chaseFrac:0.35, chaseRadius:38
+    }
+  };
+  let difficulty = 'medium';
+  let DIFF = DIFFICULTIES.medium;
 
   // ---------- audio ----------
   let actx = null;
@@ -511,6 +611,26 @@
     roster.appendChild(card);
   });
 
+  // ---------- difficulty select ----------
+  const difficultyScreen = document.getElementById('difficultyScreen');
+  function setDifficulty(key){
+    difficulty = key;
+    DIFF = DIFFICULTIES[key];
+    document.getElementById('diffLabel').textContent = key.toUpperCase();
+  }
+  document.querySelectorAll('.diffCard').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      setDifficulty(btn.dataset.diff);
+      sfxWhistle();
+      difficultyScreen.classList.add('hidden');
+      selectScreen.classList.remove('hidden');
+    });
+  });
+  document.getElementById('changeDiffBtn').addEventListener('click', ()=>{
+    selectScreen.classList.add('hidden');
+    difficultyScreen.classList.remove('hidden');
+  });
+
   // ---------- game state ----------
   const selectScreen = document.getElementById('selectScreen');
   const gameScreen = document.getElementById('gameScreen');
@@ -529,8 +649,8 @@
     return {
       ch, isCpu,
       x:startX, y:H/2, w:8, h:12,
-      vx:0, vy:0, speed: 1.15,
-      captureR: isCpu? 6.5 : 9,
+      vx:0, vy:0, speed: isCpu? DIFF.cpuSpeed : 1.15,
+      captureR: isCpu? DIFF.cpuCaptureR : 9,
       facing: isCpu? -1: 1,
       fx: isCpu? -1: 1, fy:0,
       charging:false, chargeT:0,
@@ -817,31 +937,31 @@
       if(st.think<=0){
         st.think = 30+Math.random()*20;
       }
-      if(p.x < 90 || Math.random()<0.008){
+      if(p.x < 90 || Math.random()<DIFF.shotChance){
         p.kicking = 8;
-        const gy = H/2 + (Math.random()*36-18);
+        const gy = H/2 + (Math.random()*DIFF.shotSpread*2 - DIFF.shotSpread);
         let dx = goalX-ball.x, dy=gy-ball.y;
         const d=Math.hypot(dx,dy)||1;
-        ball.vx = dx/d*2.6; ball.vy = dy/d*2.6;
-        ball.owner=null; p.recaptureCooldown=18;
+        ball.vx = dx/d*DIFF.shotPower; ball.vy = dy/d*DIFF.shotPower;
+        ball.owner=null; p.recaptureCooldown=DIFF.shotRecapture;
         sfxKick();
       }
     } else if(ball.owner===player){
       // laggy, shallow defense — only steps up when the ball is deep in CPU territory
-      targetX = ball.x > 190 ? (ball.x*0.4 + ownGoalX*0.45 + 20) : 262;
-      targetY = p.y + (ball.y - p.y)*0.35;
+      targetX = ball.x > DIFF.pressX ? (ball.x*0.4 + ownGoalX*0.45 + 20) : DIFF.holdX;
+      targetY = p.y + (ball.y - p.y)*DIFF.defenseLag;
       const distToPlayer = Math.hypot(player.x-p.x, player.y-p.y);
-      if(distToPlayer < 26 && p.slideCooldown<=0 && Math.random()<0.035){
+      if(distToPlayer < DIFF.tackleRange && p.slideCooldown<=0 && Math.random()<DIFF.tackleChance){
         beginSlide(p);
       }
     } else {
       // loose ball — CPU mostly holds its ground unless the ball is on its side
       const distToBall = Math.hypot(ball.x-p.x, ball.y-p.y);
       const ballSpeed = Math.hypot(ball.vx,ball.vy);
-      if(ballSpeed>1.6 && distToBall<40 && p.trapCooldown<=0 && Math.random()<0.05){
+      if(ballSpeed>1.6 && distToBall<DIFF.trapRange && p.trapCooldown<=0 && Math.random()<DIFF.trapChance){
         beginTrap(p);
       }
-      if(ball.x > W*0.55 || distToBall < 26){
+      if(ball.x > W*DIFF.chaseFrac || distToBall < DIFF.chaseRadius){
         targetX = ball.x; targetY = ball.y;
       } else {
         targetX = 250; targetY = H/2;
