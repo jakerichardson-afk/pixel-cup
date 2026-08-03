@@ -1,4 +1,5 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Pixel Cup</title>
 <style>
   :root{
@@ -227,47 +228,64 @@
     padding:10px 10px 2px;
   }
 
-  /* touch controls */
+  /* floating touch controls — overlaid on the canvas itself */
+  .canvasWrap{ position:relative; }
   .touch-ui{
     display:none;
+    position:absolute;
+    inset:0;
     justify-content:space-between;
     align-items:flex-end;
-    padding:14px 18px 4px;
+    padding:10px 12px;
     user-select:none;
+    z-index:6;
+    pointer-events:none;
   }
   @media (hover:none) and (pointer:coarse){
     .touch-ui{ display:flex; }
   }
   .stick-base{
-    width:96px;height:96px;
+    width:88px;height:88px;
     border-radius:50%;
-    background:#ffffff12;
-    border:2px solid var(--panel-border);
+    background:#0d0716aa;
+    backdrop-filter:blur(1px);
+    border:2px solid var(--accent2);
+    box-shadow:0 4px 14px -4px #000a, 0 0 12px -2px #38e1c655;
     position:relative;
     touch-action:none;
+    pointer-events:auto;
+    opacity:.88;
   }
   .stick-knob{
-    width:42px;height:42px;
+    width:38px;height:38px;
     border-radius:50%;
     background:var(--accent2);
-    opacity:.85;
+    opacity:.9;
     position:absolute;
-    top:27px;left:27px;
+    top:25px;left:25px;
     pointer-events:none;
+    box-shadow:0 0 8px #38e1c688;
   }
   .kick-btn{
-    width:74px;height:74px;
+    width:66px;height:66px;
     border-radius:50%;
-    background:var(--accent3);
+    background:#ff5d73dd;
     color:#1a0f2e;
     font-weight:900;
-    font-size:11px;
+    font-size:10.5px;
     letter-spacing:1px;
-    border:none;
-    box-shadow:0 5px 0 #a83f4e;
+    border:2px solid #ffffff33;
+    box-shadow:0 4px 14px -4px #000a, 0 0 12px -2px #ff5d7377;
     touch-action:none;
+    pointer-events:auto;
+    opacity:.9;
   }
-  .kick-btn:active{ transform:translateY(4px); box-shadow:0 1px 0 #a83f4e; }
+  .kick-btn:active{ transform:translateY(3px) scale(.96); box-shadow:0 1px 6px -2px #000a; }
+  @media (max-width:400px){
+    .stick-base{ width:74px; height:74px; }
+    .stick-knob{ width:32px; height:32px; top:21px; left:21px; }
+    .kick-btn{ width:56px; height:56px; font-size:9px; }
+  }
 </style>
 
 <div class="cabinet">
@@ -297,18 +315,18 @@
           <span class="dot" id="dotCpu"></span>
         </div>
       </div>
-      <div style="position:relative;">
+      <div class="canvasWrap">
         <canvas id="game" width="320" height="180"></canvas>
         <div class="overlayMsg" id="overlayMsg">
           <h2 id="overlayText">GOAL!</h2>
           <button class="btn" id="overlayBtn" style="display:none;">PLAY AGAIN</button>
         </div>
+        <div class="touch-ui">
+          <div class="stick-base" id="stickBase"><div class="stick-knob" id="stickKnob"></div></div>
+          <button class="kick-btn" id="kickBtn">KICK</button>
+        </div>
       </div>
       <div class="controls-hint">ARROWS / WASD TO MOVE &nbsp;•&nbsp; SPACE TO KICK &nbsp;•&nbsp; FIRST TO 3 WINS</div>
-      <div class="touch-ui">
-        <div class="stick-base" id="stickBase"><div class="stick-knob" id="stickKnob"></div></div>
-        <button class="kick-btn" id="kickBtn">KICK</button>
-      </div>
     </div>
   </div>
 </div>
