@@ -286,10 +286,32 @@
     0%,100%{ box-shadow:0 4px 14px -4px #000a, 0 0 12px -2px #ff5d7377; transform:scale(1); }
     50%{ box-shadow:0 4px 20px -2px #000a, 0 0 22px 4px #ff5d73cc; transform:scale(1.08); }
   }
+  .actionCluster{
+    display:flex;
+    align-items:flex-end;
+    gap:8px;
+    pointer-events:none;
+  }
+  .mini-btn{
+    width:46px;height:46px;
+    border-radius:50%;
+    color:#1a0f2e;
+    font-weight:900;
+    font-size:8.5px;
+    letter-spacing:.5px;
+    border:2px solid #ffffff33;
+    touch-action:none;
+    pointer-events:auto;
+    opacity:.9;
+  }
+  .mini-btn:active{ transform:translateY(2px) scale(.94); }
+  #trapBtn{ background:#38e1c6dd; box-shadow:0 3px 10px -3px #000a, 0 0 10px -2px #38e1c655; }
+  #tackleBtn{ background:#ffcb47dd; box-shadow:0 3px 10px -3px #000a, 0 0 10px -2px #ffcb4755; }
   @media (max-width:400px){
     .stick-base{ width:74px; height:74px; }
     .stick-knob{ width:32px; height:32px; top:21px; left:21px; }
     .kick-btn{ width:56px; height:56px; font-size:9px; }
+    .mini-btn{ width:38px; height:38px; font-size:7.5px; }
   }
 </style>
 
@@ -328,10 +350,14 @@
         </div>
         <div class="touch-ui">
           <div class="stick-base" id="stickBase"><div class="stick-knob" id="stickKnob"></div></div>
-          <button class="kick-btn" id="kickBtn">KICK</button>
+          <div class="actionCluster">
+            <button class="mini-btn trap-btn" id="trapBtn">TRAP</button>
+            <button class="kick-btn" id="kickBtn">KICK</button>
+            <button class="mini-btn tackle-btn" id="tackleBtn">TKL</button>
+          </div>
         </div>
       </div>
-      <div class="controls-hint">MOVE + AIM: ARROWS/WASD &nbsp;•&nbsp; HOLD SPACE TO CHARGE, RELEASE TO SHOOT &nbsp;•&nbsp; FIRST TO 3 WINS</div>
+      <div class="controls-hint">MOVE/AIM: ARROWS/WASD &nbsp;•&nbsp; HOLD SPACE TO CHARGE SHOT &nbsp;•&nbsp; SHIFT = SLIDE TACKLE &nbsp;•&nbsp; C = TRAP &nbsp;•&nbsp; FIRST TO 3 WINS</div>
     </div>
   </div>
 </div>
@@ -352,6 +378,8 @@
   const GOAL_TOP = 70, GOAL_BOT = 110;
   const FIELD_TOP = 14, FIELD_BOT = 166, FIELD_L = 6, FIELD_R = 314;
   const MAX_CHARGE = 42, MIN_KICK_POWER = 2.0, MAX_KICK_POWER = 4.8;
+  const SLIDE_DURATION = 12, SLIDE_COOLDOWN = 40, SLIDE_SPEED_MULT = 2.0, SLIDE_RANGE = 10;
+  const TRAP_WINDOW = 14, TRAP_COOLDOWN = 16;
 
   // ---------- audio ----------
   let actx = null;
@@ -376,18 +404,29 @@
     beep(170+t*160, 0.08+t*0.06, 'square', 0.12+t*0.09);
     beep(100+t*90, 0.08+t*0.05, 'triangle', 0.1+t*0.06, 0.02);
   }
+  function sfxSlide(){ beep(90,0.14,'sawtooth',0.12); beep(60,0.12,'sawtooth',0.08,0.03); }
+  function sfxTackleSuccess(){ beep(320,0.08,'square',0.15); beep(200,0.1,'square',0.13,0.05); }
+  function sfxTrap(){ beep(210,0.09,'sine',0.12); }
   function sfxGoal(){ [523,659,784,1046].forEach((f,i)=>beep(f,0.22,'square',0.12,i*0.09)); }
   function sfxWhistle(){ beep(1400,0.18,'sine',0.08); beep(1400,0.12,'sine',0.08,0.22); }
   function sfxWin(){ [523,659,784,1046,1318].forEach((f,i)=>beep(f,0.28,'triangle',0.13,i*0.12)); }
 
   // ---------- pixel-art player drawing ----------
-  function drawPlayer(ctx, cx, feetY, ch, facing, walkPhase, kicking, tint){
+  function drawPlayer(ctx, cx, feetY, ch, facing, walkPhase, kicking, sliding, tint){
     const s = 1;
     const legSwing = Math.sin(walkPhase*Math.PI*2) * 2;
     const bob = Math.abs(Math.sin(walkPhase*Math.PI*2)) * 1;
-    const bodyY = feetY - 12 - bob;
+    const bodyY = sliding ? feetY - 8 : feetY - 12 - bob;
 
     ctx.save();
+
+    if(sliding){
+      const dir = facing>=0 ? 1 : -1;
+      ctx.fillStyle = '#ffffff22';
+      ctx.fillRect(cx-(dir>0?11:1), feetY-3, 9, 2);
+      ctx.fillStyle = '#ffffff33';
+      ctx.fillRect(cx-(dir>0?7:2), feetY-2, 5, 1);
+    }
 
     // shadow
     ctx.fillStyle = '#00000055';
@@ -397,13 +436,19 @@
 
     // legs
     ctx.fillStyle = ch.shorts;
-    const legBack = kicking && facing>=0 ? -3 : (kicking? 3: legSwing);
-    const legFront = kicking && facing>=0 ? 4 : (kicking? -4: -legSwing);
-    ctx.fillRect(cx-3, bodyY+8, 2, 6+Math.max(0,legBack*0.4));
-    ctx.fillRect(cx+1, bodyY+8, 2, 6+Math.max(0,legFront*0.4));
-    ctx.fillStyle = ch.skin;
-    ctx.fillRect(cx-3, feetY-2+Math.min(0,-legBack*0.15), 2, 2);
-    ctx.fillRect(cx+1, feetY-2+Math.min(0,-legFront*0.15), 2, 2);
+    if(sliding){
+      const dir = facing>=0 ? 1 : -1;
+      ctx.fillRect(dir>0? cx-1: cx-7, feetY-3, 8, 3);
+      ctx.fillRect(cx-2, feetY-6, 4, 3);
+    } else {
+      const legBack = kicking && facing>=0 ? -3 : (kicking? 3: legSwing);
+      const legFront = kicking && facing>=0 ? 4 : (kicking? -4: -legSwing);
+      ctx.fillRect(cx-3, bodyY+8, 2, 6+Math.max(0,legBack*0.4));
+      ctx.fillRect(cx+1, bodyY+8, 2, 6+Math.max(0,legFront*0.4));
+      ctx.fillStyle = ch.skin;
+      ctx.fillRect(cx-3, feetY-2+Math.min(0,-legBack*0.15), 2, 2);
+      ctx.fillRect(cx+1, feetY-2+Math.min(0,-legFront*0.15), 2, 2);
+    }
 
     // torso
     ctx.fillStyle = ch.jersey;
@@ -489,6 +534,8 @@
       facing: isCpu? -1: 1,
       fx: isCpu? -1: 1, fy:0,
       charging:false, chargeT:0,
+      sliding:false, slideT:0, slideCooldown:0,
+      trapping:false, trapT:0, trapCooldown:0,
       walkPhase:0, kicking:0,
       recaptureCooldown:0,
       cpuState:{ think:0, targetY:H/2 }
@@ -558,6 +605,8 @@
     const wasDown = keys[e.key.toLowerCase()];
     keys[e.key.toLowerCase()] = true;
     if(e.key===' ' && !wasDown) startCharge();
+    if(e.key==='Shift' && !wasDown) startSlide();
+    if((e.key==='c'||e.key==='C') && !wasDown) startTrap();
   });
   window.addEventListener('keyup', e=>{
     keys[e.key.toLowerCase()] = false;
@@ -588,6 +637,8 @@
     const kickBtn = document.getElementById('kickBtn');
     kickBtn.addEventListener('touchstart', e=>{ e.preventDefault(); startCharge(); }, {passive:false});
     kickBtn.addEventListener('touchend', e=>{ e.preventDefault(); releaseKick(); }, {passive:false});
+    document.getElementById('tackleBtn').addEventListener('touchstart', e=>{ e.preventDefault(); startSlide(); }, {passive:false});
+    document.getElementById('trapBtn').addEventListener('touchstart', e=>{ e.preventDefault(); startTrap(); }, {passive:false});
   })();
 
   function aimDirection(){
@@ -640,6 +691,46 @@
     }
   }
 
+  function beginSlide(p){
+    if(p.sliding || p.slideCooldown>0 || ball.owner===p) return;
+    if(p.charging){ p.charging=false; p.chargeT=0; if(!p.isCpu) document.getElementById('kickBtn').classList.remove('charging'); }
+    p.sliding = true;
+    p.slideT = SLIDE_DURATION;
+    p.slideCooldown = SLIDE_COOLDOWN;
+    sfxSlide();
+  }
+
+  function beginTrap(p){
+    if(p.trapCooldown>0) return;
+    p.trapping = true;
+    p.trapT = TRAP_WINDOW;
+    p.trapCooldown = TRAP_COOLDOWN;
+  }
+
+  function startSlide(){
+    if(matchOver || paused || !player) return;
+    beginSlide(player);
+  }
+
+  function startTrap(){
+    if(matchOver || paused || !player) return;
+    beginTrap(player);
+  }
+
+  function resolveSlideTackle(a, b){
+    if(a.sliding && ball.owner===b){
+      const dist = Math.hypot(b.x-a.x, b.y-a.y);
+      if(dist < SLIDE_RANGE){
+        ball.owner = a;
+        ball.vx = 0; ball.vy = 0;
+        b.recaptureCooldown = 20;
+        if(b.charging){ b.charging=false; b.chargeT=0; if(!b.isCpu) document.getElementById('kickBtn').classList.remove('charging'); }
+        a.sliding = false; a.slideT = 0; a.recaptureCooldown = 0;
+        sfxTackleSuccess();
+      }
+    }
+  }
+
   // ---------- physics helpers ----------
   function clampField(e){
     e.x = Math.max(FIELD_L+3, Math.min(FIELD_R-3, e.x));
@@ -660,6 +751,22 @@
   }
 
   function updatePlayer(p, dt){
+    if(p.slideCooldown>0) p.slideCooldown -= dt;
+    if(p.trapCooldown>0) p.trapCooldown -= dt;
+    if(p.trapping){ p.trapT -= dt; if(p.trapT<=0) p.trapping=false; }
+
+    if(p.sliding){
+      p.vx = p.fx*p.speed*SLIDE_SPEED_MULT; p.vy = p.fy*p.speed*SLIDE_SPEED_MULT;
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      clampField(p);
+      p.slideT -= dt;
+      if(p.slideT<=0) p.sliding=false;
+      p.walkPhase += dt*0.09;
+      if(p.kicking>0) p.kicking -= dt;
+      if(p.recaptureCooldown>0) p.recaptureCooldown -= dt;
+      return;
+    }
+
     let ix=0, iy=0;
     if(!p.isCpu){
       if(keys['arrowleft']||keys['a']) ix-=1;
@@ -677,12 +784,28 @@
     if(p.kicking>0) p.kicking -= dt;
     if(p.recaptureCooldown>0) p.recaptureCooldown -= dt;
     if(p.charging){
-      if(ball.owner!==p){ p.charging=false; p.chargeT=0; }
+      if(ball.owner!==p){ p.charging=false; p.chargeT=0; document.getElementById('kickBtn').classList.remove('charging'); }
       else { p.chargeT = Math.min(p.chargeT+dt, MAX_CHARGE); }
     }
   }
 
   function updateCPU(p, dt){
+    if(p.slideCooldown>0) p.slideCooldown -= dt;
+    if(p.trapCooldown>0) p.trapCooldown -= dt;
+    if(p.trapping){ p.trapT -= dt; if(p.trapT<=0) p.trapping=false; }
+
+    if(p.sliding){
+      p.vx = p.fx*p.speed*SLIDE_SPEED_MULT; p.vy = p.fy*p.speed*SLIDE_SPEED_MULT;
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      clampField(p);
+      p.slideT -= dt;
+      if(p.slideT<=0) p.sliding=false;
+      p.walkPhase += dt*0.09;
+      if(p.kicking>0) p.kicking -= dt;
+      if(p.recaptureCooldown>0) p.recaptureCooldown -= dt;
+      return;
+    }
+
     const st = p.cpuState;
     st.think -= dt;
     const goalX = 6, ownGoalX = 314; // cpu attacks left(6), defends right(314)
@@ -707,9 +830,17 @@
       // laggy, shallow defense — only steps up when the ball is deep in CPU territory
       targetX = ball.x > 190 ? (ball.x*0.4 + ownGoalX*0.45 + 20) : 262;
       targetY = p.y + (ball.y - p.y)*0.35;
+      const distToPlayer = Math.hypot(player.x-p.x, player.y-p.y);
+      if(distToPlayer < 26 && p.slideCooldown<=0 && Math.random()<0.035){
+        beginSlide(p);
+      }
     } else {
       // loose ball — CPU mostly holds its ground unless the ball is on its side
       const distToBall = Math.hypot(ball.x-p.x, ball.y-p.y);
+      const ballSpeed = Math.hypot(ball.vx,ball.vy);
+      if(ballSpeed>1.6 && distToBall<40 && p.trapCooldown<=0 && Math.random()<0.05){
+        beginTrap(p);
+      }
       if(ball.x > W*0.55 || distToBall < 26){
         targetX = ball.x; targetY = ball.y;
       } else {
@@ -719,7 +850,7 @@
 
     let dx = targetX-p.x, dy = targetY-p.y;
     const d = Math.hypot(dx,dy);
-    if(d>2){ dx/=d; dy/=d; p.facing = Math.sign(dx)||p.facing; }
+    if(d>2){ dx/=d; dy/=d; p.facing = Math.sign(dx)||p.facing; p.fx=dx; p.fy=dy; }
     else { dx=0; dy=0; }
     p.vx = dx*p.speed; p.vy = dy*p.speed;
     p.x += p.vx*dt; p.y += p.vy*dt;
@@ -763,11 +894,18 @@
         if(speed < 1.6 && p.recaptureCooldown<=0){
           ball.owner = p;
         } else if(speed>=1.6) {
-          const nx=dx/(dist||1), ny=dy/(dist||1);
-          ball.vx = nx*Math.max(speed*0.6,1.2);
-          ball.vy = ny*Math.max(speed*0.6,1.2);
-          const push = captureR-dist;
-          ball.x += nx*push; ball.y += ny*push;
+          if(p.trapping){
+            ball.owner = p;
+            ball.vx = 0; ball.vy = 0;
+            p.trapping = false; p.trapT = 0;
+            sfxTrap();
+          } else {
+            const nx=dx/(dist||1), ny=dy/(dist||1);
+            ball.vx = nx*Math.max(speed*0.6,1.2);
+            ball.vy = ny*Math.max(speed*0.6,1.2);
+            const push = captureR-dist;
+            ball.x += nx*push; ball.y += ny*push;
+          }
         }
       }
     });
@@ -827,6 +965,17 @@
     ctx.restore();
   }
 
+  function drawTrapIndicator(p){
+    if(!p.trapping) return;
+    ctx.save();
+    ctx.strokeStyle = '#38e1c6';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y+4, 7, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawChargeMeter(){
     if(!player.charging) return;
     const t = Math.min(player.chargeT/MAX_CHARGE, 1);
@@ -850,6 +999,8 @@
     if(!paused && !matchOver){
       updatePlayer(player, dt);
       updateCPU(cpu, dt);
+      resolveSlideTackle(player, cpu);
+      resolveSlideTackle(cpu, player);
       resolveBodyCollision(player, cpu);
       updateBall(dt);
     }
@@ -857,8 +1008,10 @@
     drawField();
     const order = player.y < cpu.y ? [player,cpu] : [cpu,player];
     order.forEach(p=>{
-      drawPlayer(ctx, p.x, p.y+6, p.ch, p.facing, p.walkPhase, p.kicking>0);
+      drawPlayer(ctx, p.x, p.y+6, p.ch, p.facing, p.walkPhase, p.kicking>0, p.sliding);
     });
+    drawTrapIndicator(player);
+    drawTrapIndicator(cpu);
     drawBall();
     drawChargeMeter();
   }
