@@ -281,6 +281,11 @@
     opacity:.9;
   }
   .kick-btn:active{ transform:translateY(3px) scale(.96); box-shadow:0 1px 6px -2px #000a; }
+  .kick-btn.charging{ animation:chargePulse .55s ease-in-out infinite; }
+  @keyframes chargePulse{
+    0%,100%{ box-shadow:0 4px 14px -4px #000a, 0 0 12px -2px #ff5d7377; transform:scale(1); }
+    50%{ box-shadow:0 4px 20px -2px #000a, 0 0 22px 4px #ff5d73cc; transform:scale(1.08); }
+  }
   @media (max-width:400px){
     .stick-base{ width:74px; height:74px; }
     .stick-knob{ width:32px; height:32px; top:21px; left:21px; }
@@ -326,7 +331,7 @@
           <button class="kick-btn" id="kickBtn">KICK</button>
         </div>
       </div>
-      <div class="controls-hint">ARROWS / WASD TO MOVE &nbsp;•&nbsp; SPACE TO KICK &nbsp;•&nbsp; FIRST TO 3 WINS</div>
+      <div class="controls-hint">MOVE + AIM: ARROWS/WASD &nbsp;•&nbsp; HOLD SPACE TO CHARGE, RELEASE TO SHOOT &nbsp;•&nbsp; FIRST TO 3 WINS</div>
     </div>
   </div>
 </div>
@@ -346,6 +351,7 @@
   const W = 320, H = 180;
   const GOAL_TOP = 70, GOAL_BOT = 110;
   const FIELD_TOP = 14, FIELD_BOT = 166, FIELD_L = 6, FIELD_R = 314;
+  const MAX_CHARGE = 42, MIN_KICK_POWER = 2.0, MAX_KICK_POWER = 4.8;
 
   // ---------- audio ----------
   let actx = null;
@@ -366,6 +372,10 @@
     }catch(e){}
   }
   function sfxKick(){ beep(220,0.09,'square',0.14); beep(140,0.08,'triangle',0.1,0.02); }
+  function sfxKickPower(t){
+    beep(170+t*160, 0.08+t*0.06, 'square', 0.12+t*0.09);
+    beep(100+t*90, 0.08+t*0.05, 'triangle', 0.1+t*0.06, 0.02);
+  }
   function sfxGoal(){ [523,659,784,1046].forEach((f,i)=>beep(f,0.22,'square',0.12,i*0.09)); }
   function sfxWhistle(){ beep(1400,0.18,'sine',0.08); beep(1400,0.12,'sine',0.08,0.22); }
   function sfxWin(){ [523,659,784,1046,1318].forEach((f,i)=>beep(f,0.28,'triangle',0.13,i*0.12)); }
@@ -477,6 +487,8 @@
       vx:0, vy:0, speed: 1.15,
       captureR: isCpu? 6.5 : 9,
       facing: isCpu? -1: 1,
+      fx: isCpu? -1: 1, fy:0,
+      charging:false, chargeT:0,
       walkPhase:0, kicking:0,
       recaptureCooldown:0,
       cpuState:{ think:0, targetY:H/2 }
@@ -543,10 +555,14 @@
   const keys = {};
   window.addEventListener('keydown', e=>{
     if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+    const wasDown = keys[e.key.toLowerCase()];
     keys[e.key.toLowerCase()] = true;
-    if(e.key===' ') tryKick();
+    if(e.key===' ' && !wasDown) startCharge();
   });
-  window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+  window.addEventListener('keyup', e=>{
+    keys[e.key.toLowerCase()] = false;
+    if(e.key===' ') releaseKick();
+  });
 
   let touchVec = {x:0,y:0};
   (function setupTouch(){
@@ -569,29 +585,58 @@
     base.addEventListener('touchstart', e=>{e.preventDefault();start(e);}, {passive:false});
     base.addEventListener('touchmove', e=>{e.preventDefault();move(e);}, {passive:false});
     base.addEventListener('touchend', e=>{e.preventDefault();end();});
-    document.getElementById('kickBtn').addEventListener('touchstart', e=>{ e.preventDefault(); tryKick(); });
+    const kickBtn = document.getElementById('kickBtn');
+    kickBtn.addEventListener('touchstart', e=>{ e.preventDefault(); startCharge(); }, {passive:false});
+    kickBtn.addEventListener('touchend', e=>{ e.preventDefault(); releaseKick(); }, {passive:false});
   })();
 
-  function tryKick(){
+  function aimDirection(){
+    // aim with whatever movement input is held right now; otherwise use last facing
+    let ix=0, iy=0;
+    if(keys['arrowleft']||keys['a']) ix-=1;
+    if(keys['arrowright']||keys['d']) ix+=1;
+    if(keys['arrowup']||keys['w']) iy-=1;
+    if(keys['arrowdown']||keys['s']) iy+=1;
+    if(touchVec.x||touchVec.y){ ix += touchVec.x; iy += touchVec.y; }
+    const mag = Math.hypot(ix,iy);
+    if(mag>0.15) return { x: ix/mag, y: iy/mag };
+    return { x: player.fx, y: player.fy };
+  }
+
+  function startCharge(){
     if(matchOver || paused || !player) return;
     if(ball.owner===player){
-      player.kicking = 8;
-      const goalX = W, goalY = H/2 + (Math.random()*20-10);
-      let dx = goalX-ball.x, dy = goalY-ball.y;
-      const d = Math.hypot(dx,dy)||1;
-      ball.vx = dx/d*3.9; ball.vy = dy/d*3.9;
-      ball.owner=null; player.recaptureCooldown=8;
-      sfxKick();
+      if(!player.charging){ player.charging = true; player.chargeT = 0; }
     } else {
-      // poke/lunge kick if ball is near
-      const dist = Math.hypot(ball.x-(player.x), ball.y-(player.y));
-      if(dist < 15 && !ball.owner){
-        player.kicking = 8;
-        let dx = ball.x-player.x, dy = ball.y-player.y;
-        const d = Math.hypot(dx,dy)||1;
-        ball.vx += dx/d*2.8; ball.vy += dy/d*2.8;
-        sfxKick();
-      }
+      pokeKick();
+    }
+    document.getElementById('kickBtn').classList.add('charging');
+  }
+
+  function releaseKick(){
+    document.getElementById('kickBtn').classList.remove('charging');
+    if(!player || !player.charging) return;
+    player.charging = false;
+    if(ball.owner!==player){ player.chargeT = 0; return; }
+    const t = Math.min(player.chargeT/MAX_CHARGE, 1);
+    const power = MIN_KICK_POWER + (MAX_KICK_POWER-MIN_KICK_POWER)*t;
+    const dir = aimDirection();
+    player.kicking = 8;
+    ball.vx = dir.x*power; ball.vy = dir.y*power;
+    ball.owner = null; player.recaptureCooldown = 8;
+    player.chargeT = 0;
+    sfxKickPower(t);
+  }
+
+  function pokeKick(){
+    // quick lunge/tackle when the ball is loose nearby — no charging, fixed impulse
+    const dist = Math.hypot(ball.x-(player.x), ball.y-(player.y));
+    if(dist < 15 && !ball.owner){
+      player.kicking = 8;
+      let dx = ball.x-player.x, dy = ball.y-player.y;
+      const d = Math.hypot(dx,dy)||1;
+      ball.vx += dx/d*2.8; ball.vy += dy/d*2.8;
+      sfxKick();
     }
   }
 
@@ -624,13 +669,17 @@
       if(touchVec.x||touchVec.y){ ix += touchVec.x; iy += touchVec.y; }
     }
     const mag = Math.hypot(ix,iy);
-    if(mag>0){ ix/=mag; iy/=mag; p.facing = ix!==0? Math.sign(ix): p.facing; }
+    if(mag>0){ ix/=mag; iy/=mag; p.facing = ix!==0? Math.sign(ix): p.facing; p.fx=ix; p.fy=iy; }
     p.vx = ix*p.speed; p.vy = iy*p.speed;
     p.x += p.vx*dt; p.y += p.vy*dt;
     clampField(p);
     if(mag>0.1) p.walkPhase += dt*0.045; else p.walkPhase*=0.9;
     if(p.kicking>0) p.kicking -= dt;
     if(p.recaptureCooldown>0) p.recaptureCooldown -= dt;
+    if(p.charging){
+      if(ball.owner!==p){ p.charging=false; p.chargeT=0; }
+      else { p.chargeT = Math.min(p.chargeT+dt, MAX_CHARGE); }
+    }
   }
 
   function updateCPU(p, dt){
@@ -778,6 +827,18 @@
     ctx.restore();
   }
 
+  function drawChargeMeter(){
+    if(!player.charging) return;
+    const t = Math.min(player.chargeT/MAX_CHARGE, 1);
+    const w = 18, h = 3, x = player.x - w/2, y = player.y - 22;
+    ctx.save();
+    ctx.fillStyle = '#00000088';
+    ctx.fillRect(x-1, y-1, w+2, h+2);
+    ctx.fillStyle = t<0.5 ? '#38e1c6' : t<0.85 ? '#ffcb47' : '#ff5d73';
+    ctx.fillRect(x, y, w*t, h);
+    ctx.restore();
+  }
+
   // ---------- main loop ----------
   let lastTime = 0;
   function loop(t){
@@ -799,6 +860,7 @@
       drawPlayer(ctx, p.x, p.y+6, p.ch, p.facing, p.walkPhase, p.kicking>0);
     });
     drawBall();
+    drawChargeMeter();
   }
 
   // theme sync (no-op hook if host toggles data-theme on root)
