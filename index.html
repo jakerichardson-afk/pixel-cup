@@ -601,6 +601,19 @@
     e.y = Math.max(FIELD_TOP+3, Math.min(FIELD_BOT-3, e.y));
   }
 
+  const BODY_R = 9; // solid-body radius: a defender standing in the way physically blocks the carrier
+  function resolveBodyCollision(a, b){
+    let dx = b.x-a.x, dy = b.y-a.y;
+    let dist = Math.hypot(dx,dy);
+    if(dist >= BODY_R) return;
+    if(dist < 0.001){ dx = 1; dy = 0; dist = 1; }
+    const nx = dx/dist, ny = dy/dist;
+    const push = (BODY_R-dist)/2;
+    a.x -= nx*push; a.y -= ny*push;
+    b.x += nx*push; b.y += ny*push;
+    clampField(a); clampField(b);
+  }
+
   function updatePlayer(p, dt){
     let ix=0, iy=0;
     if(!p.isCpu){
@@ -776,6 +789,7 @@
     if(!paused && !matchOver){
       updatePlayer(player, dt);
       updateCPU(cpu, dt);
+      resolveBodyCollision(player, cpu);
       updateBall(dt);
     }
 
